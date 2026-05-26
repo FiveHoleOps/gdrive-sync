@@ -61,3 +61,8 @@ run_bisync "/home/ben/Videos" "googleDrive:Videos" --drive-chunk-size "128M"
 
 # 4. Backups (Preserving your 128M chunk size)
 run_bisync "/home/ben/Backups" "googleDrive:Backups" --drive-chunk-size "128M"
+
+# Print a green success message at the end of the script
+GREEN='\033[0;32m'
+NC='\033[0m' # No Color
+echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] All sync operations completed successfully!${NC}"
