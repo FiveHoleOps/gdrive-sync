@@ -1,10 +1,22 @@
 #!/bin/bash
 set -euo pipefail
 
+# Function to send desktop notifications and log to stderr
+notify_error() {
+    local msg="$1"
+    echo "[$(date +'%Y-%m-%d %H:%M:%S')] $msg" >&2
+    if command -v notify-send &> /dev/null; then
+        notify-send "Google Drive Sync Error" "$msg" --urgency=critical
+    fi
+}
+
+# Catch any unhandled script crashes (e.g., if the auto-resync fails)
+trap 'notify_error "Script failed unexpectedly on line $LINENO"' ERR
+
 # Ensure required dependencies are installed before continuing
 for cmd in rclone mullvad-exclude; do
     if ! command -v "$cmd" &> /dev/null; then
-        echo "Error: $cmd is required but not installed." >&2
+        notify_error "Error: $cmd is required but not installed."
         exit 1
     fi
 done
@@ -23,14 +35,14 @@ run_bisync() {
     mullvad-exclude rclone bisync "$local_path" "$remote_path" \
         --no-cleanup --force --tpslimit 40 --quiet "${extra_args[@]}" || exit_code=$?
 
-    # Capture the exit code. If it's 1 (critical/lost baseline), auto-fix it.
-    if [ $exit_code -eq 1 ]; then
-        echo "[$(date +'%Y-%m-%d %H:%M:%S')] Baseline lost for $local_path. Forcing resync from Fedora..."
+    # Capture the exit code. If it's 1 (lost baseline) or 7 (fatal error/missing listings), auto-fix it.
+    if [ $exit_code -eq 1 ] || [ $exit_code -eq 7 ]; then
+        echo "[$(date +'%Y-%m-%d %H:%M:%S')] Sync state issue (Exit code $exit_code) for $local_path. Forcing resync from Fedora..."
         mullvad-exclude rclone bisync "$local_path" "$remote_path" \
             --resync --resync-mode Path1 --no-cleanup --force --tpslimit 40 "${extra_args[@]}"
     elif [ $exit_code -ne 0 ]; then
         # Catch any other unexpected non-zero rclone errors
-        echo "[$(date +'%Y-%m-%d %H:%M:%S')] Warning: rclone returned exit code $exit_code for $local_path" >&2
+        notify_error "Warning: rclone returned exit code $exit_code for $local_path"
     fi
 }
 
