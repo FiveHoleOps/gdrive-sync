@@ -1,12 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
-# Function to send desktop notifications and log to stderr
+# Load config file safely based on script location
+CONFIG_FILE="$(dirname "$0")/gdrive_sync.conf"
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
+fi
+
+# Function to send desktop notifications, ntfy alerts, and log to stderr
 notify_error() {
     local msg="$1"
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $msg" >&2
     if command -v notify-send &> /dev/null; then
         notify-send "Google Drive Sync Error" "$msg" --urgency=critical
+    fi
+    if [ -n "${NTFY_TOPIC:-}" ]; then
+        curl -s -H "Title: Google Drive Sync Error" -H "Tags: warning" -d "$msg" "https://ntfy.sh/$NTFY_TOPIC" > /dev/null || true
     fi
 }
 
@@ -63,6 +72,6 @@ run_bisync "/home/ben/Videos" "googleDrive:Videos" --drive-chunk-size "128M"
 run_bisync "/home/ben/Backups" "googleDrive:Backups" --drive-chunk-size "128M"
 
 # Print a green success message at the end of the script
-GREEN='\033[0;32m'
+GREEN='\033[1;32m' # Bold Green
 NC='\033[0m' # No Color
-echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')] All sync operations completed successfully!${NC}"
+echo -e "[$(date +'%Y-%m-%d %H:%M:%S')] ${GREEN}All sync operations completed successfully!${NC}"
