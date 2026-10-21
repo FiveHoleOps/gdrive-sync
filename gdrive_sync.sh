@@ -12,7 +12,7 @@ notify_error() {
     local msg="$1"
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $msg" >&2
     if command -v notify-send &> /dev/null; then
-        notify-send "Google Drive Sync Error" "$msg" --urgency=critical
+        notify-send "Google Drive Sync Error" "$msg" --urgency=critical || true
     fi
     if [ -n "${NTFY_TOPIC:-}" ]; then
         curl -s -H "Title: Google Drive Sync Error" -H "Tags: warning" -d "$msg" "https://ntfy.sh/$NTFY_TOPIC" > /dev/null || true
@@ -39,19 +39,27 @@ run_bisync() {
 
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] Checking sync for $local_path..."
     
-    # Attempt normal sync with your original flags
     local exit_code=0
     mullvad-exclude rclone bisync "$local_path" "$remote_path" \
         --no-cleanup --force --tpslimit 40 --quiet "${extra_args[@]}" || exit_code=$?
 
-    # Capture the exit code. If it's 1 (lost baseline) or 7 (fatal error/missing listings), auto-fix it.
-    if [ $exit_code -eq 1 ] || [ $exit_code -eq 7 ]; then
-        echo "[$(date +'%Y-%m-%d %H:%M:%S')] Sync state issue (Exit code $exit_code) for $local_path. Forcing resync from Fedora..."
+    # Capture exit code: 1 (lost baseline), 2 (lock file found), or 7 (fatal error)
+    if [ $exit_code -ne 0 ]; then
+        echo "[$(date +'%Y-%m-%d %H:%M:%S')] Sync issue (Exit code $exit_code) for $local_path. Clearing lock and forcing resync from Fedora..."
+        
+        # Format path names to match rclone's bisync lock filename pattern
+        local safe_local safe_remote lock_file
+        safe_local=$(echo "$local_path" | tr '/' '_')
+        safe_remote=$(echo "$remote_path" | tr ':/' '_')
+        lock_file="$HOME/.cache/rclone/bisync/${safe_local}..${safe_remote}.lck"
+        
+        # Clear stale lock if present
+        if [ -f "$lock_file" ]; then
+            rm -f "$lock_file"
+        fi
+
         mullvad-exclude rclone bisync "$local_path" "$remote_path" \
             --resync --resync-mode Path1 --no-cleanup --force --tpslimit 40 "${extra_args[@]}"
-    elif [ $exit_code -ne 0 ]; then
-        # Catch any other unexpected non-zero rclone errors
-        notify_error "Warning: rclone returned exit code $exit_code for $local_path"
     fi
 }
 
